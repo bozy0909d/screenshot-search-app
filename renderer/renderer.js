@@ -10,39 +10,57 @@ const statusBar = document.getElementById('status-bar');
 const resultsGrid = document.getElementById('results-grid');
 const searchBox = document.getElementById('search-box');
 
-let allScreenshots = [];
+let currentQuery = '';
+let searchDebounceTimer = null;
 
 function showScreen(screen) {
   onboardingScreen.hidden = screen !== 'onboarding';
   mainScreen.hidden = screen !== 'main';
 }
 
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
 function renderResults(items) {
   resultsGrid.innerHTML = '';
+  if (items.length === 0) {
+    resultsGrid.innerHTML = '<p style="color:#888">No screenshots found.</p>';
+    return;
+  }
   for (const item of items) {
     const card = document.createElement('div');
     card.className = 'result-card';
     card.innerHTML = `
-      <img class="result-thumb" src="file://${item.filePath}" loading="lazy" />
+      <img class="result-thumb" src="file://${encodeURI(item.file_path)}" loading="lazy" />
       <div class="result-info">
-        <div class="result-name">${item.fileName}</div>
-        <div class="result-date">${new Date(item.createdAt).toLocaleString()}</div>
+        <div class="result-name">${escapeHtml(item.file_name)}</div>
+        <div class="result-date">${new Date(item.created_at).toLocaleString()}</div>
       </div>
     `;
     card.addEventListener('click', () => {
-      window.api.openFile(item.filePath);
+      window.api.openFile(item.file_path);
     });
     resultsGrid.appendChild(card);
   }
 }
 
+async function runSearch() {
+  const results = await window.api.searchScreenshots(currentQuery);
+  renderResults(results);
+  if (!currentQuery) {
+    statusBar.textContent = `${results.length} screenshot(s) indexed`;
+  } else {
+    statusBar.textContent = `${results.length} result(s) for "${currentQuery}"`;
+  }
+}
+
 async function loadFolder(folderPath) {
-  statusBar.textContent = `Scanning ${folderPath} ...`;
-  const files = await window.api.scanFolder(folderPath);
-  allScreenshots = files.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-  statusBar.textContent = `${allScreenshots.length} screenshot(s) found in ${folderPath}`;
-  renderResults(allScreenshots);
   currentFolderPath.textContent = folderPath;
+  statusBar.textContent = `Scanning ${folderPath} ...`;
+  await runSearch();
 }
 
 chooseFolderBtn.addEventListener('click', async () => {
@@ -70,13 +88,21 @@ closeSettingsBtn.addEventListener('click', () => {
 });
 
 searchBox.addEventListener('input', () => {
-  const query = searchBox.value.trim().toLowerCase();
-  if (!query) {
-    renderResults(allScreenshots);
-    return;
+  currentQuery = searchBox.value.trim();
+  clearTimeout(searchDebounceTimer);
+  searchDebounceTimer = setTimeout(runSearch, 150);
+});
+
+window.api.onIndexProgress(({ done, total }) => {
+  if (done < total) {
+    statusBar.textContent = `Indexing screenshots... (${done}/${total})`;
+  } else if (!currentQuery) {
+    runSearch();
   }
-  const filtered = allScreenshots.filter((item) => item.fileName.toLowerCase().includes(query));
-  renderResults(filtered);
+});
+
+window.api.onIndexChanged(() => {
+  runSearch();
 });
 
 (async function init() {

@@ -7,7 +7,13 @@
   "private": true,
   "scripts": {
     "start": "electron .",
-    "test:scanner": "node scripts/test-scanner.js"
+    "postinstall": "electron-rebuild -f -w better-sqlite3",
+    "test:scanner": "node scripts/test-scanner.js",
+    "test:db": "ELECTRON_RUN_AS_NODE=1 electron scripts/test-db.js",
+    "test:ocr": "node scripts/test-ocr.js scripts/fixtures/monitor.png",
+    "test:indexer": "ELECTRON_RUN_AS_NODE=1 electron scripts/test-indexer-watcher.js scripts/fixtures/monitor.png scripts/fixtures/error.png",
+    "test:smoke": "xvfb-run -a electron --no-sandbox scripts/smoke-test.js",
+    "test": "npm run test:scanner && npm run test:db && npm run test:ocr && npm run test:indexer && npm run test:smoke"
   },
   "dependencies": {
     "better-sqlite3": "^11.3.0",
@@ -15,6 +21,7 @@
     "tesseract.js": "^5.1.1"
   },
   "devDependencies": {
+    "@electron/rebuild": "^4.2.0",
     "electron": "^32.0.0"
   }
 }

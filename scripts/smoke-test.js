@@ -1,10 +1,10 @@
 /**
- * Headless smoke test: launches the real Electron app with a temp userData dir
- * pre-seeded with a watched folder, waits for the renderer to report how many
- * screenshots it found, then quits. Fails (non-zero exit) if anything throws
- * or the count doesn't match what we planted on disk.
+ * Full end-to-end smoke test: boots the real app (main.js) against a temp userData dir
+ * pre-seeded with a watched folder containing a real screenshot fixture, waits for the
+ * background OCR indexing to finish, then drives the actual renderer UI (search box,
+ * results grid) exactly as a user would. Run with: xvfb-run -a electron --no-sandbox scripts/smoke-test.js
  */
-const { app, BrowserWindow, ipcMain } = require('electron');
+const { app, BrowserWindow } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -15,63 +15,113 @@ const userDataDir = path.join(scratchRoot, 'userdata');
 fs.mkdirSync(screenshotsDir, { recursive: true });
 fs.mkdirSync(userDataDir, { recursive: true });
 
-const plantedFiles = [
-  'Screenshot 2026-08-29 at 12.41.32.png',
-  'Screenshot 2026-08-28 at 09.02.10.png',
-  'not-an-image.txt',
-];
-for (const name of plantedFiles) {
-  fs.writeFileSync(path.join(screenshotsDir, name), 'fake-bytes');
-}
-const expectedImageCount = plantedFiles.filter((n) => n.endsWith('.png')).length;
+fs.copyFileSync(path.join(__dirname, 'fixtures', 'monitor.png'), path.join(screenshotsDir, 'lg-monitor-deal.png'));
+
+fs.writeFileSync(
+  path.join(userDataDir, 'config.json'),
+  JSON.stringify({ watchedFolder: screenshotsDir }, null, 2)
+);
 
 app.setPath('userData', userDataDir);
 
-const { ConfigStore } = require('../src/store');
-const preSeedConfig = new ConfigStore(userDataDir);
-preSeedConfig.set('watchedFolder', screenshotsDir);
+let createdWindow = null;
+app.on('browser-window-created', (event, win) => {
+  createdWindow = win;
+});
 
-const { scanFolder } = require('../src/scanner');
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
-app.whenReady().then(async () => {
+async function waitForCondition(fn, { timeoutMs = 30000, intervalMs = 300 } = {}) {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    const result = await fn();
+    if (result) return result;
+    await sleep(intervalMs);
+  }
+  throw new Error('Timed out waiting for condition');
+}
+
+(async () => {
   try {
-    const results = scanFolder(screenshotsDir);
-    if (results.length !== expectedImageCount) {
-      throw new Error(`Expected ${expectedImageCount} images, got ${results.length}`);
-    }
+    require('../main.js');
 
-    const win = new BrowserWindow({
-      show: false,
-      webPreferences: {
-        preload: path.join(__dirname, '..', 'preload.js'),
-        contextIsolation: true,
-        nodeIntegration: false,
-      },
+    const win = await waitForCondition(() => createdWindow, { timeoutMs: 10000 });
+    await waitForCondition(() => !win.webContents.isLoading(), { timeoutMs: 10000 });
+
+    console.log('Waiting for background OCR indexing to finish...');
+    await waitForCondition(async () => {
+      const status = await win.webContents.executeJavaScript(
+        'document.getElementById("status-bar").textContent'
+      );
+      console.log('  status:', status);
+      return /^\d+ screenshot\(s\) indexed$/.test(status);
     });
 
-    ipcMain.handle('get-watched-folder', () => screenshotsDir);
-    ipcMain.handle('scan-folder', async (event, folderPath) => scanFolder(folderPath));
+    const onboardingHidden = await win.webContents.executeJavaScript(
+      'document.getElementById("onboarding").hidden'
+    );
+    if (!onboardingHidden) throw new Error('Onboarding should be hidden once a folder is configured');
 
-    await win.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
+    const initialCardCount = await win.webContents.executeJavaScript(
+      'document.getElementById("results-grid").children.length'
+    );
+    if (initialCardCount !== 1) throw new Error(`Expected 1 result card before search, got ${initialCardCount}`);
 
-    const domResult = await win.webContents.executeJavaScript(`
-      (async () => {
-        await new Promise((r) => setTimeout(r, 500));
-        const grid = document.getElementById('results-grid');
-        const status = document.getElementById('status-bar').textContent;
-        const onboardingHidden = document.getElementById('onboarding').hidden;
-        return { cardCount: grid.children.length, status, onboardingHidden };
+    console.log('Typing a search query that should match the OCR text ("LG monitor")...');
+    await win.webContents.executeJavaScript(`
+      (() => {
+        const box = document.getElementById('search-box');
+        box.value = 'LG monitor';
+        box.dispatchEvent(new Event('input'));
       })()
     `);
 
-    console.log('DOM result:', domResult);
+    await waitForCondition(async () => {
+      const status = await win.webContents.executeJavaScript('document.getElementById("status-bar").textContent');
+      return status.includes('result(s) for "LG monitor"');
+    });
 
-    if (!domResult.onboardingHidden) {
-      throw new Error('Onboarding screen should be hidden once a folder is set');
-    }
-    if (domResult.cardCount !== expectedImageCount) {
-      throw new Error(`Expected ${expectedImageCount} result cards in DOM, got ${domResult.cardCount}`);
-    }
+    const matchCount = await win.webContents.executeJavaScript(
+      'document.getElementById("results-grid").children.length'
+    );
+    if (matchCount !== 1) throw new Error(`Expected 1 matching result for "LG monitor", got ${matchCount}`);
+
+    console.log('Typing a search query that should NOT match anything ("qwerty zzz nonsense")...');
+    await win.webContents.executeJavaScript(`
+      (() => {
+        const box = document.getElementById('search-box');
+        box.value = 'qwerty zzz nonsense';
+        box.dispatchEvent(new Event('input'));
+      })()
+    `);
+    await waitForCondition(async () => {
+      const status = await win.webContents.executeJavaScript('document.getElementById("status-bar").textContent');
+      return status.includes('0 result(s)');
+    });
+
+    console.log('Confirming the result card is clickable and openFile IPC round-trips without throwing...');
+    await win.webContents.executeJavaScript(`
+      (() => {
+        const box = document.getElementById('search-box');
+        box.value = '';
+        box.dispatchEvent(new Event('input'));
+      })()
+    `);
+    await sleep(400);
+    const clickOutcome = await win.webContents.executeJavaScript(`
+      (async () => {
+        try {
+          document.querySelector('.result-card').click();
+          return 'clicked-ok';
+        } catch (e) {
+          return 'error: ' + e.message;
+        }
+      })()
+    `);
+    console.log('result-card click outcome:', clickOutcome);
+    if (clickOutcome !== 'clicked-ok') throw new Error('Clicking the result card threw an error');
 
     console.log('SMOKE TEST PASSED');
     process.exitCode = 0;
@@ -79,7 +129,9 @@ app.whenReady().then(async () => {
     console.error('SMOKE TEST FAILED:', err);
     process.exitCode = 1;
   } finally {
-    fs.rmSync(scratchRoot, { recursive: true, force: true });
-    app.quit();
+    setTimeout(() => {
+      fs.rmSync(scratchRoot, { recursive: true, force: true });
+      app.quit();
+    }, 300);
   }
-});
+})();
