@@ -134,6 +134,10 @@ header {
   justify-content: center;
 }
 
+.modal[hidden] {
+  display: none;
+}
+
 .modal-content {
   background: white;
   padding: 24px;
