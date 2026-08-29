@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <title>Find That Screenshot</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="onboarding" class="screen">
+    <h1>Find That Screenshot</h1>
+    <p>Pick the folder where your screenshots are saved. We'll index it and keep watching for new ones.</p>
+    <button id="choose-folder-btn">Choose Screenshot Folder</button>
+  </div>
+
+  <div id="main-screen" class="screen" hidden>
+    <header>
+      <input id="search-box" type="text" placeholder="Search your screenshots..." />
+      <button id="settings-btn" title="Settings">⚙</button>
+    </header>
+
+    <div id="status-bar"></div>
+
+    <div id="results-grid"></div>
+  </div>
+
+  <div id="settings-modal" class="modal" hidden>
+    <div class="modal-content">
+      <h2>Settings</h2>
+      <p>Watched folder:</p>
+      <code id="current-folder-path"></code>
+      <div class="modal-actions">
+        <button id="change-folder-btn">Change Folder</button>
+        <button id="close-settings-btn">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="renderer.js"></script>
+</body>
+</html>

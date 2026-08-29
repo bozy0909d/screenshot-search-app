@@ -1,0 +1,20 @@
+{
+  "name": "find-that-screenshot",
+  "productName": "Find That Screenshot",
+  "version": "0.1.0",
+  "description": "Search your screenshot library by what you remember seeing in it.",
+  "main": "main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "test:scanner": "node scripts/test-scanner.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.3.0",
+    "chokidar": "^3.6.0",
+    "tesseract.js": "^5.1.1"
+  },
+  "devDependencies": {
+    "electron": "^32.0.0"
+  }
+}
