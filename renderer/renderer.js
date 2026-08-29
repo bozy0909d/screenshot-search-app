@@ -1,3 +1,4 @@
+const errorBanner = document.getElementById('error-banner');
 const onboardingScreen = document.getElementById('onboarding');
 const mainScreen = document.getElementById('main-screen');
 const chooseFolderBtn = document.getElementById('choose-folder-btn');
@@ -16,6 +17,15 @@ let searchDebounceTimer = null;
 function showScreen(screen) {
   onboardingScreen.hidden = screen !== 'onboarding';
   mainScreen.hidden = screen !== 'main';
+}
+
+function showError(message) {
+  errorBanner.textContent = message;
+  errorBanner.hidden = false;
+}
+
+function clearError() {
+  errorBanner.hidden = true;
 }
 
 function escapeHtml(str) {
@@ -64,18 +74,28 @@ async function loadFolder(folderPath) {
 }
 
 chooseFolderBtn.addEventListener('click', async () => {
-  const folder = await window.api.selectFolder();
-  if (folder) {
-    showScreen('main');
-    await loadFolder(folder);
+  try {
+    clearError();
+    const folder = await window.api.selectFolder();
+    if (folder) {
+      showScreen('main');
+      await loadFolder(folder);
+    }
+  } catch (err) {
+    showError(`Couldn't set that folder: ${err.message}`);
   }
 });
 
 changeFolderBtn.addEventListener('click', async () => {
-  const folder = await window.api.selectFolder();
-  if (folder) {
-    settingsModal.hidden = true;
-    await loadFolder(folder);
+  try {
+    clearError();
+    const folder = await window.api.selectFolder();
+    if (folder) {
+      settingsModal.hidden = true;
+      await loadFolder(folder);
+    }
+  } catch (err) {
+    showError(`Couldn't set that folder: ${err.message}`);
   }
 });
 

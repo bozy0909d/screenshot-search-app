@@ -13,6 +13,24 @@ body {
   padding: 24px;
 }
 
+#error-banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 1000;
+  background: #fce8e6;
+  color: #a30000;
+  padding: 10px 20px;
+  font-size: 13px;
+  text-align: center;
+  border-bottom: 1px solid #f3c2bd;
+}
+
+#error-banner[hidden] {
+  display: none;
+}
+
 #onboarding {
   display: flex;
   flex-direction: column;

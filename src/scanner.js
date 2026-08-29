@@ -27,7 +27,12 @@ function scanFolder(folderPath) {
       if (entry.isDirectory()) {
         walk(fullPath);
       } else if (entry.isFile() && isImageFile(fullPath)) {
-        const stats = fs.statSync(fullPath);
+        let stats;
+        try {
+          stats = fs.statSync(fullPath);
+        } catch (err) {
+          continue; // file may have been renamed/removed since readdir (e.g. still being written)
+        }
         results.push({
           filePath: fullPath,
           fileName: entry.name,
